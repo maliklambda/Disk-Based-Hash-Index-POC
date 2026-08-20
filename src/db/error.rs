@@ -1,19 +1,28 @@
 use std::{io, num::ParseIntError};
 
-use crate::index::hash::IdxHash;
+use crate::db::hash::IdxHash;
 
 /// Error returned during execution of commands on the index.
 #[derive(Debug)]
 pub enum ExecuteError {
     GetErr(GetErr),
     InsertErr(InsertErr),
+    AppendErr(AppendErr),
     InitErr(InitErr),
+    ValueTooLong { max_len: usize, got: usize },
+    KeyTooLong { max_len: usize, got: usize },
     ExitCmd,
 }
 
 impl From<GetErr> for ExecuteError {
     fn from(value: GetErr) -> Self {
         Self::GetErr(value)
+    }
+}
+
+impl From<AppendErr> for ExecuteError {
+    fn from(value: AppendErr) -> Self {
+        Self::AppendErr(value)
     }
 }
 
@@ -35,6 +44,17 @@ pub enum InitErr {
 }
 
 impl From<io::Error> for InitErr {
+    fn from(value: io::Error) -> Self {
+        Self::IoErr(value)
+    }
+}
+
+#[derive(Debug)]
+pub enum AppendErr {
+    IoErr(io::Error),
+}
+
+impl From<io::Error> for AppendErr {
     fn from(value: io::Error) -> Self {
         Self::IoErr(value)
     }
