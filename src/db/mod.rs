@@ -7,9 +7,9 @@ use std::{
 
 use log::{debug, info};
 
-use crate::index::{
+use crate::db::{
     disk_entry::DiskEntry,
-    error::{CollisionWalkErr, GetErr, InitErr, InsertErr},
+    error::{AppendErr, CollisionWalkErr, ExecuteError, GetErr, InitErr, InsertErr},
     hash::{IdxHash, hash},
 };
 
@@ -20,9 +20,7 @@ pub mod hash;
 /// Page size in bytes
 pub const PAGE_SIZE: usize = 256;
 
-pub type Value = u64;
-
-pub struct Index {
+pub struct DB {
     /// Btree maps the hash of a String to the offset of the disk node.
     /// So the btree maps the hash to offset o1 on disk.
     /// At o1, there is a DiskEntry (see struct DiskEntry),
@@ -30,67 +28,109 @@ pub struct Index {
     pub btree: BTreeMap<IdxHash, u64>,
 
     /// File descriptor
-    /// Contents are appended here
+    /// Contents are appended here. The actual data lives elsewhere (Entry-file).
     content: File,
 
     /// Buffer for page content
     buffer: [u8; PAGE_SIZE],
+
+    /// Entries (i.e. Values) are dumped here
+    entries: File,
+    // TODO: handle durability after shutdown.
     // /// File descriptor
     // /// Btree is dumped here and read during startup
     // f_idx: File,
 }
 
-impl Index {
-    /// Filename of the content file
+impl DB {
+    /// Filename of the index-content file.
     const F_CONTENT: &str = "content.db";
+    /// Filename of the entries file.
+    const F_ENTRIES: &str = "entries.db";
 
     /// Init with default file name
     pub fn new() -> Result<Self, InitErr> {
-        Self::init(Self::F_CONTENT)
+        Self::init(Self::F_CONTENT, Self::F_ENTRIES)
     }
 
-    pub fn init(filename: &str) -> Result<Self, InitErr> {
+    pub fn init(idx_content_fname: &str, entries_fname: &str) -> Result<Self, InitErr> {
         let content = OpenOptions::new()
             .read(true)
             .write(true)
+            // This needs to be write and not append
+            // because of the updates made during chaining
             .create(true)
             .truncate(true)
-            .open(filename)?;
+            .open(idx_content_fname)?;
+
+        // open entries-file twice, first to truncate, second to initialize with append
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(entries_fname)?;
+        let entries = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .open(entries_fname)?;
         Ok(Self {
             btree: BTreeMap::new(),
+            entries,
             content,
             buffer: [0_u8; PAGE_SIZE],
         })
     }
 
+    /// Insert both a key and value
+    pub fn insert(&mut self, key: &str, val: &str) -> Result<(), ExecuteError> {
+        println!("Inserting value '{key}', '{val}' to entry-file");
+        let (val_offset, val_len) = self.append_entry(val)?;
+        self.insert_idx(key, val_offset, val_len)?;
+        Ok(())
+    }
+
     /// Insert a key into the index
-    pub fn insert(
+    fn insert_idx(
         &mut self,
-        s: &str,
-        value: Value, /* simulated offset to entry on disk */
+        key: &str,
+        val_offset: u64, /* simulated offset to entry on disk */
+        val_len: usize,  /* length of the value in the entries file */
     ) -> Result<(), InsertErr> {
-        let h = hash(s);
+        let h = hash(key);
         if self.btree.contains_key(&h) {
             // In case of collision: update next-pointer of last value with the same hash.
             // Do not insert to btree in that case (Head of ll is already inserted).
             println!("Existing hash value '{h}'. Need chaining");
-            let pos = self.append_de(h, s, value);
+            let pos = self.append_de(key, val_offset, val_len);
             let (mut de_existing, offset_existing) = self.collision_last(h)?;
-            debug!("Updating next of {:?} to {pos}", de_existing);
+            println!(
+                "Updating next of {:?} (@{offset_existing}) to {pos}",
+                de_existing
+            );
             de_existing.next = pos;
             self.content
                 .write_all_at(&de_existing.to_bytes(), offset_existing)?;
         } else {
             info!("Inserting new value to btree");
-            let pos = self.append_de(h, s, value);
+            let pos = self.append_de(key, val_offset, val_len);
+            println!("Appended DE @{pos}");
             self.btree.insert(h, pos);
         }
         Ok(())
     }
 
+    fn append_entry(
+        &mut self,
+        value: &str,
+    ) -> Result<(u64 /*offset*/, usize /*length*/), AppendErr> {
+        let pos = self.entries.stream_position()?;
+        self.entries.write_all(value.as_bytes())?;
+        Ok((pos, value.len()))
+    }
+
     /// walk collision chain and return last entry
     /// Does not update any value.
-    pub fn collision_last(&mut self, start: IdxHash) -> Result<(DiskEntry, u64), CollisionWalkErr> {
+    fn collision_last(&mut self, start: IdxHash) -> Result<(DiskEntry, u64), CollisionWalkErr> {
         // read existing
         let mut offset_existing = *self.btree.get(&start).unwrap();
         debug!("Starting collision last iteration");
@@ -112,7 +152,7 @@ impl Index {
 
     /// walk collision chain and return entry with specified length
     /// Does not update any value.
-    pub fn collision_find(
+    fn collision_find(
         &mut self,
         start: IdxHash,
         find_len: u32,
@@ -127,7 +167,7 @@ impl Index {
             let de_existing =
                 DiskEntry::from_bytes(&self.buffer).ok_or(CollisionWalkErr::ByteConvertErr)?;
             values.push(de_existing.clone());
-            if de_existing.len == find_len {
+            if de_existing.key_len == find_len {
                 println!("Traversed the following disk nodes: {:?}", values);
                 break Ok((de_existing, offset_existing));
             }
@@ -135,8 +175,8 @@ impl Index {
             offset_existing = de_existing.next;
 
             if de_existing.next == 0 {
-                info!("All values = {:?}", values);
-                if de_existing.len != find_len {
+                println!("All values = {:?}", values);
+                if de_existing.key_len != find_len {
                     return Err(CollisionWalkErr::HashNotFound {
                         hash: start,
                         len: find_len,
@@ -149,13 +189,10 @@ impl Index {
     }
 
     /// returns offset of diskentry inserted
-    fn append_de(&mut self, h: IdxHash, s: &str, value: Value) -> u64 {
-        assert_eq!(h, hash(s));
-        let de = DiskEntry::new(s, value); // value stored in diskentry
-        let pos = self
-            .content
-            .seek(io::SeekFrom::End(0))
-            .expect("Seek failed");
+    fn append_de(&mut self, key: &str, value: u64, len: usize) -> u64 {
+        let de = DiskEntry::new(key, value, len as u32); // value stored in diskentry
+        println!("New DE: {:?}", de);
+        let pos = self.content.seek(io::SeekFrom::End(0)).unwrap();
         // position stored in btree
         self.content
             .write_all(&de.to_bytes())
@@ -163,27 +200,35 @@ impl Index {
         pos
     }
 
+    pub fn get(&mut self, key: &str) -> Result<String, GetErr> {
+        let (hash, de) = self.get_idx(key)?;
+        println!("DiskEntry for {hash}: {:?}", de);
+        let mut buf = vec![0_u8; de.val_len as usize];
+        self.entries.read_at(&mut buf, de.entry)?;
+        Ok(String::from_utf8(buf).unwrap())
+    }
+
     /// Retrieve a value from the index.
-    ///
     /// &self needs to be mutable because the buffer associated with self is to be filled.
-    pub fn get(&mut self, key: &str) -> Result<Value, GetErr> {
+    fn get_idx(&mut self, key: &str) -> Result<(IdxHash, DiskEntry), GetErr> {
         let h = hash(key);
+        println!("Btree: {:?} ({h})", self.btree);
         let val = self.btree.get(&h).ok_or(GetErr::HashNotFound(h))?;
         let bytes = self.content.read_at(&mut self.buffer, *val)?;
         assert!(bytes <= PAGE_SIZE);
         let mut de = DiskEntry::from_bytes(&self.buffer).ok_or(GetErr::ByteConvertErr)?;
-        if de.next != 0 && de.len != key.len() as u32 {
+        if de.next != 0 && de.key_len != key.len() as u32 {
             (de, _) = self.collision_find(h, key.len() as u32).unwrap();
         }
-        Ok(de.entry)
+        Ok((h, de))
     }
 }
 
 #[test]
 fn e2e_index() {
-    use crate::index::hash::NON_COLLISION_VALUES;
+    use crate::db::hash::{NON_COLLISION_VALUES, TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME};
 
-    let mut idx = Index::init("test.db").unwrap();
+    let mut idx = DB::init(TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME).unwrap();
     let values = NON_COLLISION_VALUES;
 
     for (s, val) in values {
@@ -205,12 +250,12 @@ fn e2e_index() {
 
 #[test]
 fn e2e_index_collision() {
-    use crate::index::hash::COLLISION_VALUES;
-    let mut idx = Index::init("test.db").unwrap();
+    use crate::db::hash::{COLLISION_VALUES, TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME};
+    let mut idx = DB::init(TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME).unwrap();
 
     let values: Vec<(&str, u64)> = COLLISION_VALUES
         .iter()
-        .map(|v| (*v, rand::random::<Value>()))
+        .map(|v| (*v, rand::random::<u64>()))
         .collect();
 
     for (s, val) in &values {
@@ -218,20 +263,22 @@ fn e2e_index_collision() {
     }
 
     for (s, val) in values {
-        let v = idx.get(s).unwrap();
+        let v = idx.get_idx(s).unwrap();
         assert_eq!(v, val);
     }
 }
 
 #[test]
 fn e2e_index_full() {
-    use crate::index::hash::{COLLISION_VALUES, NON_COLLISION_VALUES};
+    use crate::db::hash::{
+        COLLISION_VALUES, NON_COLLISION_VALUES, TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME,
+    };
 
-    let mut idx = Index::init("test.db").unwrap();
+    let mut idx = DB::init(TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME).unwrap();
 
     let mut values: Vec<(&str, u64)> = COLLISION_VALUES
         .iter()
-        .map(|v| (*v, rand::random::<Value>()))
+        .map(|v| (*v, rand::random::<u64>()))
         .collect();
     values.extend(NON_COLLISION_VALUES);
 
@@ -240,7 +287,7 @@ fn e2e_index_full() {
     }
 
     for (s, val) in &values {
-        let v = idx.get(s).unwrap();
+        let v = idx.get_idx(s).unwrap();
         assert_eq!(
             v,
             *val,

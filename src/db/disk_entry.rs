@@ -1,9 +1,10 @@
-use crate::index::Value;
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct DiskEntry {
-    /// length of the string s
-    pub len: u32,
+    /// length of the key
+    pub key_len: u32,
+
+    /// length of the value
+    pub val_len: u32,
 
     /// Offset to next diskentry
     /// This is used only for collisions.
@@ -12,21 +13,23 @@ pub struct DiskEntry {
 
     /// Offset to actual entry.
     /// Entry is to be stored elsewhere
-    pub entry: Value,
+    pub entry: u64,
 }
 
 impl DiskEntry {
-    pub fn new(s: &str, value: u64) -> Self {
+    pub fn new(key: &str, val_offset: u64, val_len: u32) -> Self {
         Self {
-            len: s.len() as u32,
+            key_len: key.len() as u32,
+            val_len,
             next: 0,
-            entry: value,
+            entry: val_offset,
         }
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
         [
-            self.len.to_le_bytes().to_vec(),
+            self.val_len.to_le_bytes().to_vec(),
+            self.key_len.to_le_bytes().to_vec(),
             self.next.to_le_bytes().to_vec(),
             self.entry.to_le_bytes().to_vec(),
         ]
@@ -35,20 +38,26 @@ impl DiskEntry {
 
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let mut idx = 0;
-        let len = u32::from_le_bytes(bytes[..size_of::<u32>()].try_into().unwrap());
+        let val_len = u32::from_le_bytes(bytes[..size_of::<u32>()].try_into().unwrap());
+        idx += size_of::<u32>();
+        let key_len = u32::from_le_bytes(bytes[idx..idx + size_of::<u32>()].try_into().unwrap());
         idx += size_of::<u32>();
         let next = u64::from_le_bytes(bytes[idx..idx + size_of::<u64>()].try_into().unwrap());
         idx += size_of::<u64>();
-        let entry = u64::from_le_bytes(bytes[idx..idx + size_of::<Value>()].try_into().unwrap());
-        // idx += size_of::<Value>();
+        let entry = u64::from_le_bytes(bytes[idx..idx + size_of::<u64>()].try_into().unwrap());
 
-        Some(Self { len, next, entry })
+        Some(Self {
+            key_len,
+            val_len,
+            next,
+            entry,
+        })
     }
 }
 
 #[test]
 fn disk_entry_serialization() {
-    let de = DiskEntry::new("Hello world", 12345);
+    let de = DiskEntry::new("1234", 3, 12345);
     let bytes = de.to_bytes();
     let de_new = DiskEntry::from_bytes(&bytes).unwrap();
     assert_eq!(de, de_new)

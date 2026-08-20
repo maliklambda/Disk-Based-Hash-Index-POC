@@ -4,12 +4,14 @@ pub type IdxHash = u64;
 
 /// Two values may not have the same length
 pub const COLLISION_VALUES: [&str; 5] = ["hello", "food", "why", "me", "i"];
+pub const TEST_CONTENT_FNAME: &str = ".test.content.db";
+pub const TEST_ENTRIES_FNAME: &str = ".test.content.db";
 
-pub const NON_COLLISION_VALUES: [(&str, u64); 4] = [
-    ("I", 238412384),
-    ("like", 1238421843),
-    ("eating", 75),
-    ("Pizza", 1234214),
+pub const NON_COLLISION_VALUES: [(&str, &str); 4] = [
+    ("I", "am your father, Luke"),
+    ("like", "you do."),
+    ("eating", "pizza is fun"),
+    ("Pizza", "is italian"),
 ];
 
 pub fn hash(s: &str) -> IdxHash {
