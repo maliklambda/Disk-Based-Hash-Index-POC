@@ -33,5 +33,14 @@ b) what sequences are stored,
 become highly relevant for the performance when iterating over the index's buckets.
 For example, the endings "ing" or "ment" are very common in the english language.
 Knowing that, one might either store those exact sequences, resulting in better performance for a small set, 
-or store the sequence plus one (or more) characters before it, creating a greater granularity and therefore faster queries.
+or store the sequence plus one (or more) characters before it, 
+creating a greater granularity and therefore faster queries.
+
+#### Range-Index Structure
 A radix-tree or trie may be a good fit to store the pre- and suffix-indices.
+Since the range-index-structure practically results in a list of offsets that are read from disk, 
+this creates the opportunity to schedule the reads such that they are the most performative.
+For example, with a block-size of 5, the following reads may be restructured from:
+```2@0; 7@10; 1@3; 3@17``` to ```2@0; 1@3; 7@10; 3@17```.
+The first one needs 4 separate disk reads (caching disregarded!) with inefficient disk-head-movements.
+The second one reads blocks 1-3 sequentially in one go, needing effectively no lseek in between.
