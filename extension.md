@@ -36,11 +36,15 @@ Knowing that, one might either store those exact sequences, resulting in better 
 or store the sequence plus one (or more) characters before it, 
 creating a greater granularity and therefore faster queries.
 
-#### Range-Index Structure
+#### Range-Bucket-Index Structure
 A radix-tree or trie may be a good fit to store the pre- and suffix-indices.
 Since the range-index-structure practically results in a list of offsets that are read from disk, 
 this creates the opportunity to schedule the reads such that they are the most performative.
 For example, with a block-size of 5, the following reads may be restructured from:
 ```2@0; 7@10; 1@3; 3@17``` to ```2@0; 1@3; 7@10; 3@17```.
 The first one needs 4 separate disk reads (caching disregarded!) with inefficient disk-head-movements.
-The second one reads blocks 1-3 sequentially in one go, needing effectively no lseek in between.
+<br>
+![Range Bucket Index](static/range_bucket_index.drawio.svg)
+<br>
+The Disk-Entry structure might need two new fields, range_bucket_idx_prev and range_bucket_idx_next in order to build a linked list for the range index. 
+This would break modularity, which is why it might be a good idea for the range-index to reference a separate array of disk-entries, so that modularity stays.
