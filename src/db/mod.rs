@@ -8,9 +8,7 @@ use std::{
 use log::{debug, info};
 
 use crate::db::{
-    disk_entry::DiskEntry,
-    error::{AppendErr, CollisionWalkErr, ExecuteError, GetErr, InitErr, InsertErr},
-    hash::{IdxHash, hash},
+    disk_entry::DiskEntry, error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr}, hash::{IdxHash, hash},
 };
 
 pub mod disk_entry;
@@ -229,6 +227,12 @@ impl DB {
             (de, _) = self.collision_find(h, key.len() as u32).unwrap();
         }
         Ok((h, de))
+    }
+
+    /// Deletes an entry by its key.
+    /// The value of the deleted entry is returned.
+    pub fn delete(&mut self, key: &str) -> Result<&str, DeleteErr> {
+        todo!("Implement delete")
     }
 }
 

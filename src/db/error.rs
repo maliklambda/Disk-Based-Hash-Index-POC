@@ -7,6 +7,7 @@ use crate::db::hash::IdxHash;
 pub enum ExecuteError {
     GetErr(GetErr),
     InsertErr(InsertErr),
+    DeleteErr(DeleteErr),
     AppendErr(AppendErr),
     InitErr(InitErr),
     ValueTooLong { max_len: usize, got: usize },
@@ -31,6 +32,13 @@ impl From<InsertErr> for ExecuteError {
         Self::InsertErr(value)
     }
 }
+
+impl From<DeleteErr> for ExecuteError {
+    fn from(value: DeleteErr) -> Self {
+        Self::DeleteErr(value)
+    }
+}
+
 
 impl From<InitErr> for ExecuteError {
     fn from(value: InitErr) -> Self {
@@ -93,6 +101,17 @@ pub enum GetErr {
 }
 
 impl From<io::Error> for GetErr {
+    fn from(value: io::Error) -> Self {
+        Self::IoErr(value)
+    }
+}
+
+#[derive(Debug)]
+pub enum DeleteErr {
+    IoErr(io::Error),
+}
+
+impl From<io::Error> for DeleteErr {
     fn from(value: io::Error) -> Self {
         Self::IoErr(value)
     }

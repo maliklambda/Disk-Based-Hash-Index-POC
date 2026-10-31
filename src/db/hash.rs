@@ -3,7 +3,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 pub type IdxHash = u64;
 
 /// Two values may not have the same length
-pub const COLLISION_VALUES: [&str; 5] = ["hello", "food", "why", "me", "i"];
+pub const COLLISION_VALUES: [&str; 6] = ["hello", "food", "meal", "why", "me", "i"];
 pub const TEST_CONTENT_FNAME: &str = ".test.content.db";
 pub const TEST_ENTRIES_FNAME: &str = ".test.content.db";
 
