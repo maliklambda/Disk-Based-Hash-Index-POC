@@ -1,3 +1,5 @@
+use crate::db::hash::hash;
+
 const USAGE_STR: &str = "Usage:
   - insert <key> <value>
   - get <key>
@@ -18,4 +20,9 @@ const INFO_STR: &str = "Info:
 
 pub fn print_info() {
     println!("{INFO_STR}")
+}
+
+pub fn print_hash(key: &str) {
+    let h = hash(key);
+    println!("h('{key}') = {h}")
 }

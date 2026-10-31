@@ -39,7 +39,6 @@ impl From<DeleteErr> for ExecuteError {
     }
 }
 
-
 impl From<InitErr> for ExecuteError {
     fn from(value: InitErr) -> Self {
         Self::InitErr(value)

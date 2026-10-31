@@ -8,7 +8,9 @@ use std::{
 use log::{debug, info};
 
 use crate::db::{
-    disk_entry::DiskEntry, error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr}, hash::{IdxHash, hash},
+    disk_entry::DiskEntry,
+    error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr},
+    hash::{IdxHash, hash},
 };
 
 pub mod disk_entry;
@@ -40,7 +42,6 @@ pub struct DB {
     /// File descriptor
     /// Contents are appended here. The actual data lives elsewhere (Entry-file).
     content: File,
-
     // TODO: handle durability before shutdown.
     // /// File descriptor
     // /// Btree is dumped here and read during startup

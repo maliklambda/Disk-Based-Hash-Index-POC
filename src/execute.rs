@@ -1,6 +1,6 @@
 use crate::{
     db::{DB, error::ExecuteError},
-    utils::{print_info, print_usage},
+    utils::{print_hash, print_info, print_usage},
 };
 
 const SEP: char = '\0';
@@ -22,6 +22,7 @@ pub fn execute(buf: &str, idx: &mut DB) -> Result<(), ExecuteError> {
             idx.delete(key)?;
         }
         ["info"] => print_info(),
+        ["hash", key] => print_hash(key),
         ["exit"] => return Err(ExecuteError::ExitCmd),
         _ => print_usage(),
     };
