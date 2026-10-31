@@ -8,9 +8,7 @@ use std::{
 use log::{debug, info};
 
 use crate::db::{
-    disk_entry::DiskEntry,
-    error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr},
-    hash::{IdxHash, hash},
+    disk_entry::DiskEntry, error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr}, hash::{IdxHash, hash},
 };
 
 pub mod disk_entry;
@@ -252,77 +250,136 @@ impl DB {
     }
 }
 
-#[test]
-fn e2e_index() {
-    use crate::db::hash::{NON_COLLISION_VALUES, TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME};
 
-    let mut idx = DB::init(TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME).unwrap();
-    let values = NON_COLLISION_VALUES;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    for (s, val) in values {
-        idx.insert(s, val).unwrap();
+    #[allow(dead_code)]
+    pub enum TestFileType {
+        Content,
+        Entries
     }
 
-    for (s, val) in values {
-        let v = idx.get(s).unwrap();
-        assert_eq!(
-            v,
-            val,
-            "For {s} - {:?}; Values: {:?}; Btree: {:?}",
-            hash(s),
-            values,
-            idx.btree
-        );
-    }
-}
+    #[allow(dead_code)]
+    const TEST_FILE_PREFIX: &str = "test_";
+    const TEST_CONTENT_VALUES: [&str; 8] = ["This", "is", "indeed", "a", "lot", "of", "content", "!"];
+    const TEST_CONTENT_FNAME: &str = ".test.content.db";
+    const TEST_ENTRIES_FNAME: &str = ".test.entries.db";
 
-#[test]
-fn e2e_index_collision() {
-    use crate::db::hash::{COLLISION_VALUES, TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME};
-    let mut idx = DB::init(TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME).unwrap();
-
-    let values: Vec<(&str, u64)> = COLLISION_VALUES
-        .iter()
-        .map(|v| (*v, rand::random::<u64>()))
-        .collect();
-
-    for (s, val) in &values {
-        idx.insert(s, *val).unwrap();
+    fn generate_test_file_names(s: &str) -> (String, String) {
+        (test_file_name(s, TestFileType::Content), test_file_name(s, TestFileType::Entries))
     }
 
-    for (s, val) in values {
-        let v = idx.get_idx(s).unwrap();
-        assert_eq!(v, val);
-    }
-}
-
-#[test]
-fn e2e_index_full() {
-    use crate::db::hash::{
-        COLLISION_VALUES, NON_COLLISION_VALUES, TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME,
-    };
-
-    let mut idx = DB::init(TEST_CONTENT_FNAME, TEST_ENTRIES_FNAME).unwrap();
-
-    let mut values: Vec<(&str, u64)> = COLLISION_VALUES
-        .iter()
-        .map(|v| (*v, rand::random::<u64>()))
-        .collect();
-    values.extend(NON_COLLISION_VALUES);
-
-    for (s, val) in &values {
-        idx.insert(s, *val).unwrap();
+    fn test_file_name(s: &str, file_type: TestFileType) -> String {
+        match file_type {
+            TestFileType::Content => format!("{TEST_FILE_PREFIX}{s}{TEST_CONTENT_FNAME}"),
+            TestFileType::Entries => format!("{TEST_FILE_PREFIX}{s}{TEST_ENTRIES_FNAME}")
+        }
     }
 
-    for (s, val) in &values {
-        let v = idx.get_idx(s).unwrap();
-        assert_eq!(
-            v,
-            *val,
-            "For {s} - {:?}; Values: {:?}; Btree: {:?}",
-            hash(s),
-            values,
-            idx.btree
-        );
+
+    #[test]
+    fn index_non_collision() {
+        use crate::db::hash::NON_COLLISION_VALUES;
+
+        let (f_entries, f_content) = generate_test_file_names("index_non_collision");
+        let mut idx = DB::init(&f_entries, &f_content).unwrap();
+        let values = NON_COLLISION_VALUES;
+
+        for (key, val) in values {
+            idx.insert(key, val).unwrap();
+        }
+
+        for (key, val) in values {
+            let v = idx.get(key).unwrap();
+            assert_eq!(
+                v,
+                val,
+                "For {key} - {:?}; Values: {:?}; Btree: {:?}",
+                hash(key),
+                values,
+                idx.btree
+            );
+        }
+    }
+
+    #[test]
+    fn index_collision() {
+        use crate::db::hash::COLLISION_VALUES;
+
+        let (f_entries, f_content) = generate_test_file_names("index_collision");
+        let mut idx = DB::init(&f_entries, &f_content).unwrap();
+
+        let values: Vec<(&str, &str)> = COLLISION_VALUES
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (*v, TEST_CONTENT_VALUES[i]))
+            .collect();
+
+        for (key, val) in &values {
+            idx.insert(key, val).unwrap();
+        }
+
+        for (key, val) in values {
+            let v = idx.get(key).unwrap();
+            assert_eq!(v, val);
+        }
+    }
+
+    /// Test a collision with the same length
+    #[test]
+    fn index_collision_same_length() {
+        use crate::db::hash::COLLISION_VALUES_SAME_LENGTH;
+
+        let (f_entries, f_content) = generate_test_file_names("index_collision_same_length");
+        let mut idx = DB::init(&f_entries, &f_content).unwrap();
+
+        let values: Vec<(&str, &str)> = COLLISION_VALUES_SAME_LENGTH
+            .iter()
+            .map(|v| (*v, &v[0..2]))
+            .collect();
+
+        for (s, val) in &values {
+            idx.insert(s, val).unwrap();
+        }
+
+        for (s, val) in values {
+            let v = idx.get(s).unwrap();
+            assert_eq!(v, val);
+        }
+    }
+
+    #[test]
+    fn index_full() {
+        use crate::db::hash::{
+            COLLISION_VALUES, NON_COLLISION_VALUES
+        };
+
+        let (f_entries, f_content) = generate_test_file_names("index_full");
+        let mut idx = DB::init(&f_entries, &f_content).unwrap();
+
+        let mut values: Vec<(&str, &str)> = COLLISION_VALUES
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (*v, TEST_CONTENT_VALUES[i]))
+            .collect();
+        values.extend(NON_COLLISION_VALUES);
+
+        for (key, val) in &values {
+            idx.insert(key, val).unwrap();
+        }
+
+        for (key, val) in &values {
+            let v = idx.get(key).unwrap();
+            assert_eq!(
+                v,
+                *val,
+                "For {key} - {:?}; Values: {:?}; Btree: {:?}",
+                hash(key),
+                values,
+                idx.btree
+            );
+        }
     }
 }
