@@ -59,7 +59,7 @@ impl DB {
         Self::init(Self::F_CONTENT, Self::F_ENTRIES)
     }
 
-    pub fn init(idx_content_fname: &str, entries_fname: &str) -> Result<Self, InitErr> {
+    pub fn init(entries_fname: &str, content_fname: &str) -> Result<Self, InitErr> {
         let content = OpenOptions::new()
             .read(true)
             .write(true)
@@ -67,7 +67,7 @@ impl DB {
             // because of the updates made during chaining
             .create(true)
             .truncate(true)
-            .open(idx_content_fname)?;
+            .open(content_fname)?;
 
         // open entries-file twice, first to truncate, second to initialize with append
         OpenOptions::new()
@@ -91,7 +91,7 @@ impl DB {
     /// Insert both a key and value
     pub fn insert(&mut self, key: &str, val: &str) -> Result<(), ExecuteError> {
         println!("Inserting value '{key}', '{val}' to entry-file");
-        let (val_offset, val_len) = self.append_entry(val)?;
+        let (val_offset, val_len) = self.append_content(key, val)?;
         self.insert_idx(key, val_offset, val_len)?;
         Ok(())
     }
@@ -115,7 +115,7 @@ impl DB {
                 de_existing
             );
             de_existing.next = pos;
-            self.content
+            self.entries
                 .write_all_at(&de_existing.to_bytes(), offset_existing)?;
         } else {
             info!("Inserting new value to btree");
@@ -126,12 +126,17 @@ impl DB {
         Ok(())
     }
 
-    fn append_entry(
+    /// Appends content to the data file.
+    /// The key-string must be prepended, to ensure that hash-collisions with the same length can
+    /// check the key-value to be unambiguous.
+    fn append_content(
         &mut self,
+        key: &str,
         value: &str,
     ) -> Result<(u64 /*offset*/, usize /*length*/), AppendErr> {
-        let pos = self.entries.stream_position()?;
-        self.entries.write_all(value.as_bytes())?;
+        let pos = self.content.stream_position()?;
+        self.content.write_all(key.as_bytes())?;
+        self.content.write_all(value.as_bytes())?;
         Ok((pos, value.len()))
     }
 
@@ -142,7 +147,7 @@ impl DB {
         let mut offset_existing = *self.btree.get(&start).unwrap();
         debug!("Starting collision last iteration");
         loop {
-            self.content
+            self.entries
                 .read_at(&mut self.buffer, offset_existing)
                 .unwrap();
             let de_existing =
@@ -162,31 +167,41 @@ impl DB {
     fn collision_find(
         &mut self,
         start: IdxHash,
-        find_len: u32,
+        key: &str,
     ) -> Result<(DiskEntry, u64), CollisionWalkErr> {
+        // allocate buffer for reading value.
+        let mut buf = vec![0_u8; key.len()];
+
         // read existing
         let mut offset_existing = *self.btree.get(&start).unwrap();
         let mut values: Vec<DiskEntry> = vec![];
         loop {
-            self.content
+            self.entries
                 .read_at(&mut self.buffer, offset_existing)
                 .unwrap();
             let de_existing =
                 DiskEntry::from_bytes(&self.buffer).ok_or(CollisionWalkErr::ByteConvertErr)?;
             values.push(de_existing.clone());
-            if de_existing.key_len == find_len {
-                println!("Traversed the following disk nodes: {:?}", values);
-                break Ok((de_existing, offset_existing));
+            if de_existing.key_len == key.len() as u32 {
+                println!("Found entry with matching length");
+                // Read entry to check if length AND value.
+                // Break only of there is an exact match.
+                self.content.read_at(&mut buf, de_existing.entry + key.len() as u64).unwrap();
+                println!("Comparing: {:?} to {:?}", buf, key);
+                if buf == key.as_bytes() {
+                    println!("Traversed the following disk nodes: {:?}", values);
+                    break Ok((de_existing, offset_existing));
+                }
             }
 
             offset_existing = de_existing.next;
 
             if de_existing.next == 0 {
                 println!("All values = {:?}", values);
-                if de_existing.key_len != find_len {
+                if de_existing.key_len != key.len() as u32 {
                     return Err(CollisionWalkErr::HashNotFound {
                         hash: start,
-                        len: find_len,
+                        len: key.len() as u32,
                     });
                 }
                 println!("Traversed the following disk nodes: {:?}", values);
@@ -199,9 +214,9 @@ impl DB {
     fn append_de(&mut self, key: &str, value: u64, len: usize) -> u64 {
         let de = DiskEntry::new(key, value, len as u32); // value stored in diskentry
         println!("New DE: {:?}", de);
-        let pos = self.content.seek(io::SeekFrom::End(0)).unwrap();
+        let pos = self.entries.seek(io::SeekFrom::End(0)).unwrap();
         // position stored in btree
-        self.content
+        self.entries
             .write_all(&de.to_bytes())
             .expect("Write failed");
         pos
@@ -211,7 +226,7 @@ impl DB {
         let (hash, de) = self.get_idx(key)?;
         println!("DiskEntry for {hash}: {:?}", de);
         let mut buf = vec![0_u8; de.val_len as usize];
-        self.entries.read_at(&mut buf, de.entry)?;
+        self.content.read_at(&mut buf, de.entry + key.len() as u64)?;
         Ok(String::from_utf8(buf).unwrap())
     }
 
@@ -221,11 +236,11 @@ impl DB {
         let h = hash(key);
         println!("Btree: {:?} ({h})", self.btree);
         let val = self.btree.get(&h).ok_or(GetErr::HashNotFound(h))?;
-        let bytes = self.content.read_at(&mut self.buffer, *val)?;
+        let bytes = self.entries.read_at(&mut self.buffer, *val)?;
         assert!(bytes <= PAGE_SIZE);
         let mut de = DiskEntry::from_bytes(&self.buffer).ok_or(GetErr::ByteConvertErr)?;
-        if de.next != 0 && de.key_len != key.len() as u32 {
-            (de, _) = self.collision_find(h, key.len() as u32).unwrap();
+        if de.next != 0 {
+            (de, _) = self.collision_find(h, key).unwrap();
         }
         Ok((h, de))
     }

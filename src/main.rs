@@ -14,7 +14,7 @@ pub mod utils;
 
 fn main() {
     simple_logger::init_with_level(log::Level::Warn).unwrap();
-    let mut idx = DB::init("index.db", "entries.db").unwrap();
+    let mut idx = DB::init("entries.db", "content.db").unwrap();
     let mut buf = String::new();
     loop {
         print!("> ");
