@@ -17,6 +17,10 @@ pub fn execute(buf: &str, idx: &mut DB) -> Result<(), ExecuteError> {
             println!("getting value '{s}'");
             println!("Value found: {}", idx.get(s)?);
         }
+        ["delete", key] => {
+            println!("Deleting value '{key}'");
+            idx.delete(key)?;
+        }
         ["info"] => print_info(),
         ["exit"] => return Err(ExecuteError::ExitCmd),
         _ => print_usage(),

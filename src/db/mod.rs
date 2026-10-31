@@ -21,22 +21,29 @@ pub mod hash;
 pub const PAGE_SIZE: usize = 256;
 
 pub struct DB {
+    /// Level 1: Btree
     /// Btree maps the hash of a String to the offset of the disk node.
     /// So the btree maps the hash to offset o1 on disk.
     /// At o1, there is a DiskEntry (see struct DiskEntry),
     /// which in turn points to the offset of the actual data.
     pub btree: BTreeMap<IdxHash, u64>,
 
+    /// Buffer for page content
+    buffer: [u8; PAGE_SIZE],
+
+    /// Level 2: Disk Entries LL
+    /// Entries (i.e. Values) are dumped here
+    entries: File,
+
+    /// Free list in DE-LL
+    de_free_list: Vec<usize>,
+
+    /// Level 3: Content/data layer
     /// File descriptor
     /// Contents are appended here. The actual data lives elsewhere (Entry-file).
     content: File,
 
-    /// Buffer for page content
-    buffer: [u8; PAGE_SIZE],
-
-    /// Entries (i.e. Values) are dumped here
-    entries: File,
-    // TODO: handle durability after shutdown.
+    // TODO: handle durability before shutdown.
     // /// File descriptor
     // /// Btree is dumped here and read during startup
     // f_idx: File,
@@ -76,6 +83,7 @@ impl DB {
         Ok(Self {
             btree: BTreeMap::new(),
             entries,
+            de_free_list: vec![],
             content,
             buffer: [0_u8; PAGE_SIZE],
         })
