@@ -40,7 +40,12 @@ pub struct DB {
 
     /// Level 3: Content/data layer
     /// File descriptor
-    /// Contents are appended here. The actual data lives elsewhere (Entry-file).
+    /// Contents are appended here with their key.
+    ///
+    ///   -----------------------------------------------
+    ///   | key1 | val1 | key2 | val2 |...| keyn | valn |
+    ///   -----------------------------------------------
+    ///
     pub content: File,
     // TODO: handle durability before shutdown.
     // /// File descriptor
@@ -127,19 +132,11 @@ impl DB {
     /// The key-string must be prepended, to ensure that hash-collisions with the same length can
     /// check the key-value to be unambiguous.
     /// Returns the length of the value.
-    ///
-    /// Experimental Docs:
-    /// Since the content looks like this:
-    ///           -------------
-    /// content = | key | val |
-    ///           -------------
-    /// The length of the content is key.len() + val.len()
-    ///
     fn append_content(
         &mut self,
         key: &str,
         value: &str,
-    ) -> Result<(u64 /*offset*/, usize /*length*/), AppendErr> {
+    ) -> Result<(u64 /*offset*/, usize /*length of the value*/), AppendErr> {
         let pos = self.content.stream_position()?;
         self.content.write_all(key.as_bytes())?;
         self.content.write_all(value.as_bytes())?;
