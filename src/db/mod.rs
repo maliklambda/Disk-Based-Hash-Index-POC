@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     fs::{File, OpenOptions},
-    io::{self, Read, Seek, Write},
+    io::{self, Seek, Write},
     os::unix::fs::FileExt,
 };
 
@@ -39,7 +39,7 @@ pub struct DB {
     pub entries: File,
 
     /// Free list in DE-LL
-    pub de_free_list: Vec<usize>,
+    pub de_free_list: Vec<u64>,
 
     /// Level 3: Content/data layer
     /// File descriptor
@@ -233,7 +233,8 @@ impl DB {
         let pos = if self.de_free_list.is_empty() {
             self.entries.seek(io::SeekFrom::End(0)).unwrap()
         } else {
-            self.de_free_list.pop().unwrap() as u64
+            println!("Using free list :D");
+            self.de_free_list.pop().unwrap()
         };
         let de = DiskEntry::new(key, value, len as u32); // value stored in diskentry
         println!("New DE: {:?}", de);
@@ -285,15 +286,21 @@ impl DB {
         let (hash, _de_current, collision) = self.get_idx(key)?;
         if !collision {
             println!("No collision");
-            let _val = self.btree.remove(&hash).ok_or(GetErr::HashNotFound(hash))?;
+            let val = self.btree.remove(&hash).ok_or(GetErr::HashNotFound(hash))?;
             // add de_current to free-list
+            self.de_free_list.push(val);
             Ok(())
         } else {
             let dellt_res = self.collision_find(hash, key).unwrap();
             println!("DellTraversalResult: {:?}", dellt_res);
-            // add de_current to free-list
-
-            // dellt_res.prev.unwrap().1
+            if dellt_res.prev.is_none() {
+                println!("Deleting head of DE-LL");
+                let v = self.btree.get_mut(&hash).unwrap();
+                *v = dellt_res.cur.0.next;
+                self.de_free_list.push(dellt_res.cur.1);
+                return Ok(());
+            }
+            self.de_free_list.push(dellt_res.cur.1);
             let (mut new_de, prev_offset) = dellt_res.prev.unwrap();
             new_de.next = dellt_res.cur.0.next;
             self.entries.write_all_at(&new_de.to_bytes(), prev_offset)?;
@@ -326,7 +333,7 @@ mod tests {
     }
 
     #[allow(dead_code)]
-    const TEST_FILE_PREFIX: &str = "test_";
+    const TEST_FILE_PREFIX: &str = "test_files/";
     const TEST_CONTENT_VALUES: [&str; 8] =
         ["This", "is", "indeed", "a", "lot", "of", "content", "!"];
     const TEST_CONTENT_FNAME: &str = ".test.content.db";
@@ -347,36 +354,36 @@ mod tests {
     }
 
     #[test]
-    fn index_non_collision() {
+    fn test_index_non_collision() {
         use crate::db::hash::NON_COLLISION_VALUES;
 
         let (f_entries, f_content) = generate_test_file_names("index_non_collision");
-        let mut idx = DB::init(&f_entries, &f_content).unwrap();
+        let mut db = DB::init(&f_entries, &f_content).unwrap();
         let values = NON_COLLISION_VALUES;
 
         for (key, val) in values {
-            idx.insert(key, val).unwrap();
+            db.insert(key, val).unwrap();
         }
 
         for (key, val) in values {
-            let v = idx.get(key).unwrap();
+            let v = db.get(key).unwrap();
             assert_eq!(
                 v,
                 val,
                 "For {key} - {:?}; Values: {:?}; Btree: {:?}",
                 hash(key),
                 values,
-                idx.btree
+                db.btree
             );
         }
     }
 
     #[test]
-    fn index_collision() {
+    fn test_index_collision() {
         use crate::db::hash::COLLISION_VALUES;
 
         let (f_entries, f_content) = generate_test_file_names("index_collision");
-        let mut idx = DB::init(&f_entries, &f_content).unwrap();
+        let mut db = DB::init(&f_entries, &f_content).unwrap();
 
         let values: Vec<(&str, &str)> = COLLISION_VALUES
             .iter()
@@ -385,22 +392,22 @@ mod tests {
             .collect();
 
         for (key, val) in &values {
-            idx.insert(key, val).unwrap();
+            db.insert(key, val).unwrap();
         }
 
         for (key, val) in values {
-            let v = idx.get(key).unwrap();
+            let v = db.get(key).unwrap();
             assert_eq!(v, val);
         }
     }
 
     /// Test a collision with the same length
     #[test]
-    fn index_collision_same_length() {
+    fn test_index_collision_same_length() {
         use crate::db::hash::COLLISION_VALUES_SAME_LENGTH;
 
         let (f_entries, f_content) = generate_test_file_names("index_collision_same_length");
-        let mut idx = DB::init(&f_entries, &f_content).unwrap();
+        let mut db = DB::init(&f_entries, &f_content).unwrap();
 
         let values: Vec<(&str, &str)> = COLLISION_VALUES_SAME_LENGTH
             .iter()
@@ -408,21 +415,21 @@ mod tests {
             .collect();
 
         for (s, val) in &values {
-            idx.insert(s, val).unwrap();
+            db.insert(s, val).unwrap();
         }
 
         for (s, val) in values {
-            let v = idx.get(s).unwrap();
+            let v = db.get(s).unwrap();
             assert_eq!(v, val);
         }
     }
 
     #[test]
-    fn index_full() {
+    fn test_index_full() {
         use crate::db::hash::{COLLISION_VALUES, NON_COLLISION_VALUES};
 
         let (f_entries, f_content) = generate_test_file_names("index_full");
-        let mut idx = DB::init(&f_entries, &f_content).unwrap();
+        let mut db = DB::init(&f_entries, &f_content).unwrap();
 
         let mut values: Vec<(&str, &str)> = COLLISION_VALUES
             .iter()
@@ -432,19 +439,51 @@ mod tests {
         values.extend(NON_COLLISION_VALUES);
 
         for (key, val) in &values {
-            idx.insert(key, val).unwrap();
+            db.insert(key, val).unwrap();
         }
 
         for (key, val) in &values {
-            let v = idx.get(key).unwrap();
+            let v = db.get(key).unwrap();
             assert_eq!(
                 v,
                 *val,
                 "For {key} - {:?}; Values: {:?}; Btree: {:?}",
                 hash(key),
                 values,
-                idx.btree
+                db.btree
             );
         }
+    }
+
+    #[test]
+    fn test_deletion() {
+        use crate::db::hash::{COLLISION_VALUES, NON_COLLISION_VALUES};
+
+        let (f_entries, f_content) = generate_test_file_names("index_full");
+        let mut db = DB::init(&f_entries, &f_content).unwrap();
+
+        let mut values: Vec<(&str, &str)> = COLLISION_VALUES
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (*v, TEST_CONTENT_VALUES[i]))
+            .collect();
+        values.extend(NON_COLLISION_VALUES);
+
+        for (key, val) in &values {
+            db.insert(key, val).unwrap();
+        }
+
+        for (key, _val) in &values {
+            db.delete(key).unwrap();
+        }
+
+        for (key, _val) in &values {
+            matches!(db.get(key), Err(GetErr::HashNotFound(_)));
+        }
+    }
+
+    #[test]
+    fn test_deletion_collided_values() {
+        todo!();
     }
 }
