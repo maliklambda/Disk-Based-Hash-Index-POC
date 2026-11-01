@@ -230,9 +230,13 @@ impl DB {
 
     /// returns offset of diskentry inserted
     fn append_de(&mut self, key: &str, value: u64, len: usize) -> u64 {
+        let pos = if self.de_free_list.is_empty() {
+            self.entries.seek(io::SeekFrom::End(0)).unwrap()
+        } else {
+            self.de_free_list.pop().unwrap() as u64
+        };
         let de = DiskEntry::new(key, value, len as u32); // value stored in diskentry
         println!("New DE: {:?}", de);
-        let pos = self.entries.seek(io::SeekFrom::End(0)).unwrap();
         // position stored in btree
         self.entries
             .write_all_at(&de.to_bytes(), pos)
@@ -280,7 +284,8 @@ impl DB {
     pub fn delete(&mut self, key: &str) -> Result<(), DeleteErr> {
         let (hash, _de_current, collision) = self.get_idx(key)?;
         if !collision {
-            let _val = self.btree.get(&hash).ok_or(GetErr::HashNotFound(hash))?;
+            println!("No collision");
+            let _val = self.btree.remove(&hash).ok_or(GetErr::HashNotFound(hash))?;
             // add de_current to free-list
             Ok(())
         } else {
