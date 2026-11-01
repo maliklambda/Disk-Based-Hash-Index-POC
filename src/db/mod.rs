@@ -20,6 +20,7 @@ pub mod hash;
 /// Page size in bytes
 pub const PAGE_SIZE: usize = 256;
 
+#[derive(Debug)]
 pub struct DB {
     /// Level 1: Btree
     /// Btree maps the hash of a String to the offset of the disk node.
@@ -260,11 +261,17 @@ impl DB {
         todo!("Implement delete")
     }
 
+    /// Util function to print DEs
     pub fn print_de(&mut self, de_id: &str) {
         let de_id = de_id.parse::<u64>().unwrap();
         self.entries.read_at(&mut self.buffer, de_id).unwrap();
         let de = DiskEntry::from_bytes(&self.buffer).unwrap();
         println!("DE: {:?}", de);
+    }
+
+    /// Util function to print DB's state
+    pub fn print_state(&mut self) {
+        println!("DB: {:?}", self);
     }
 }
 
