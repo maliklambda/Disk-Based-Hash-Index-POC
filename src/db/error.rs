@@ -95,6 +95,7 @@ pub enum CollisionWalkErr {
 #[derive(Debug)]
 pub enum GetErr {
     HashNotFound(IdxHash),
+    InvalidLen,
     ByteConvertErr,
     IoErr(io::Error),
 }

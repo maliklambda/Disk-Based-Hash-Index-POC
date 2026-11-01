@@ -1,4 +1,6 @@
-use crate::db::hash::hash;
+use std::os::unix::fs::FileExt;
+
+use crate::db::{DB, disk_entry::DiskEntry, hash::hash};
 
 const USAGE_STR: &str = "Usage:
   - insert <key> <value>

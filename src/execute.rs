@@ -1,28 +1,28 @@
 use crate::{
-    db::{DB, error::ExecuteError},
-    utils::{print_hash, print_info, print_usage},
+    db::{DB, error::ExecuteError}, utils::{print_hash, print_info, print_usage},
 };
 
 const SEP: char = '\0';
 
-pub fn execute(buf: &str, idx: &mut DB) -> Result<(), ExecuteError> {
+pub fn execute(buf: &str, db: &mut DB) -> Result<(), ExecuteError> {
     // TODO: preprocess buf to enable multiline strings
     match pre_process(buf).split(SEP).collect::<Vec<_>>().as_slice() {
         [""] => (),
         ["insert", key, val] => {
             println!("Inserting value '{key}', '{val}' to entry-file");
-            idx.insert(key, val)?;
+            db.insert(key, val)?;
         }
         ["get", s] => {
             println!("getting value '{s}'");
-            println!("Value found: {}", idx.get(s)?);
+            println!("Value found: {}", db.get(s)?);
         }
         ["delete", key] => {
             println!("Deleting value '{key}'");
-            idx.delete(key)?;
+            db.delete(key)?;
         }
         ["info"] => print_info(),
         ["hash", key] => print_hash(key),
+        ["de", de_id] => db.print_de(de_id),
         ["exit"] => return Err(ExecuteError::ExitCmd),
         _ => print_usage(),
     };

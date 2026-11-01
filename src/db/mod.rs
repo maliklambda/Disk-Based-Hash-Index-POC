@@ -1,8 +1,5 @@
 use std::{
-    collections::BTreeMap,
-    fs::{File, OpenOptions},
-    io::{self, Seek, Write},
-    os::unix::fs::FileExt,
+    collections::BTreeMap, fs::{File, OpenOptions}, io::{self, Read, Seek, Write}, os::unix::fs::FileExt
 };
 
 use log::{debug, info};
@@ -27,19 +24,19 @@ pub struct DB {
     pub btree: BTreeMap<IdxHash, u64>,
 
     /// Buffer for page content
-    buffer: [u8; PAGE_SIZE],
+    pub buffer: [u8; PAGE_SIZE],
 
     /// Level 2: Disk Entries LL
     /// Entries (i.e. Values) are dumped here
-    entries: File,
+    pub entries: File,
 
     /// Free list in DE-LL
-    de_free_list: Vec<usize>,
+    pub de_free_list: Vec<usize>,
 
     /// Level 3: Content/data layer
     /// File descriptor
     /// Contents are appended here. The actual data lives elsewhere (Entry-file).
-    content: File,
+    pub content: File,
     // TODO: handle durability before shutdown.
     // /// File descriptor
     // /// Btree is dumped here and read during startup
@@ -67,15 +64,11 @@ impl DB {
             .truncate(true)
             .open(content_fname)?;
 
-        // open entries-file twice, first to truncate, second to initialize with append
-        OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(entries_fname)?;
         let entries = OpenOptions::new()
             .read(true)
-            .append(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
             .open(entries_fname)?;
         Ok(Self {
             btree: BTreeMap::new(),
@@ -113,8 +106,11 @@ impl DB {
                 de_existing
             );
             de_existing.next = pos;
-            self.entries
-                .write_all_at(&de_existing.to_bytes(), offset_existing)?;
+            println!(
+                "Updated next of {:?} (@{offset_existing})",
+                de_existing
+            );
+            self.entries.write_all_at(&de_existing.to_bytes(), offset_existing)?;
         } else {
             info!("Inserting new value to btree");
             let pos = self.append_de(key, val_offset, val_len);
@@ -127,6 +123,15 @@ impl DB {
     /// Appends content to the data file.
     /// The key-string must be prepended, to ensure that hash-collisions with the same length can
     /// check the key-value to be unambiguous.
+    /// Returns the length of the value.
+    ///
+    /// Experimental Docs:
+    /// Since the content looks like this:
+    ///           -------------
+    /// content = | key | val |
+    ///           -------------
+    /// The length of the content is key.len() + val.len()
+    ///
     fn append_content(
         &mut self,
         key: &str,
@@ -135,7 +140,8 @@ impl DB {
         let pos = self.content.stream_position()?;
         self.content.write_all(key.as_bytes())?;
         self.content.write_all(value.as_bytes())?;
-        Ok((pos, value.len()))
+        let content_len = value.len();
+        Ok((pos, content_len))
     }
 
     /// walk collision chain and return last entry
@@ -170,6 +176,7 @@ impl DB {
         // allocate buffer for reading value.
         let mut buf = vec![0_u8; key.len()];
 
+
         // read existing
         let mut offset_existing = *self.btree.get(&start).unwrap();
         let mut values: Vec<DiskEntry> = vec![];
@@ -184,8 +191,8 @@ impl DB {
                 println!("Found entry with matching length");
                 // Read entry to check if length AND value.
                 // Break only of there is an exact match.
-                self.content.read_at(&mut buf, de_existing.entry + key.len() as u64).unwrap();
-                println!("Comparing: {:?} to {:?}", buf, key);
+                self.content.read_at(&mut buf, de_existing.entry).unwrap();
+                println!("Comparing: buf({:?}) to key({:?})", buf, key.as_bytes());
                 if buf == key.as_bytes() {
                     println!("Traversed the following disk nodes: {:?}", values);
                     break Ok((de_existing, offset_existing));
@@ -215,7 +222,7 @@ impl DB {
         let pos = self.entries.seek(io::SeekFrom::End(0)).unwrap();
         // position stored in btree
         self.entries
-            .write_all(&de.to_bytes())
+            .write_all_at(&de.to_bytes(), pos)
             .expect("Write failed");
         pos
     }
@@ -223,6 +230,9 @@ impl DB {
     pub fn get(&mut self, key: &str) -> Result<String, GetErr> {
         let (hash, de) = self.get_idx(key)?;
         println!("DiskEntry for {hash}: {:?}", de);
+        if key.len() != de.key_len as usize {
+            return Err(GetErr::InvalidLen)
+        }
         let mut buf = vec![0_u8; de.val_len as usize];
         self.content.read_at(&mut buf, de.entry + key.len() as u64)?;
         Ok(String::from_utf8(buf).unwrap())
@@ -236,6 +246,7 @@ impl DB {
         let val = self.btree.get(&h).ok_or(GetErr::HashNotFound(h))?;
         let bytes = self.entries.read_at(&mut self.buffer, *val)?;
         assert!(bytes <= PAGE_SIZE);
+        // TODO: Refactor to remove redundant read of head (in self.collision_find).
         let mut de = DiskEntry::from_bytes(&self.buffer).ok_or(GetErr::ByteConvertErr)?;
         if de.next != 0 {
             (de, _) = self.collision_find(h, key).unwrap();
@@ -247,6 +258,16 @@ impl DB {
     /// The value of the deleted entry is returned.
     pub fn delete(&mut self, key: &str) -> Result<&str, DeleteErr> {
         todo!("Implement delete")
+    }
+
+    pub fn print_de(&mut self, de_id: &str) {
+        let de_id = de_id.parse::<u64>().unwrap();
+        self.entries
+            .read_at(&mut self.buffer, de_id)
+            .unwrap();
+        let de =
+            DiskEntry::from_bytes(&self.buffer).unwrap();
+        println!("DE: {:?}", de);
     }
 }
 
