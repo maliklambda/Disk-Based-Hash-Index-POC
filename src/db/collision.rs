@@ -1,6 +1,5 @@
 use crate::db::disk_entry::DiskEntry;
 
-
 /// Struct to capture the result of a collision finding.
 /// The traversing of the DE-LL will be captured inside.
 #[derive(Debug)]

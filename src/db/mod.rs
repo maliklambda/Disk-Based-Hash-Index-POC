@@ -1,17 +1,23 @@
 use std::{
-    collections::BTreeMap, fs::{File, OpenOptions}, io::{self, Read, Seek, Write}, os::unix::fs::FileExt,
+    collections::BTreeMap,
+    fs::{File, OpenOptions},
+    io::{self, Read, Seek, Write},
+    os::unix::fs::FileExt,
 };
 
 use log::{debug, info};
 
 use crate::db::{
-    collision::DellTraversalResult, disk_entry::DiskEntry, error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr}, hash::{IdxHash, hash},
+    collision::DellTraversalResult,
+    disk_entry::DiskEntry,
+    error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr},
+    hash::{IdxHash, hash},
 };
 
+pub mod collision;
 pub mod disk_entry;
 pub mod error;
 pub mod hash;
-pub mod collision;
 
 /// Page size in bytes
 pub const PAGE_SIZE: usize = 256;
@@ -193,7 +199,10 @@ impl DB {
                 println!("Comparing: buf({:?}) to key({:?})", buf, key.as_bytes());
                 if buf == key.as_bytes() {
                     println!("Traversed the following disk nodes: {:?}", values);
-                    break Ok(DellTraversalResult {cur: (de_existing, offset_existing), prev });
+                    break Ok(DellTraversalResult {
+                        cur: (de_existing, offset_existing),
+                        prev,
+                    });
                 }
             }
 
@@ -207,7 +216,10 @@ impl DB {
                     });
                 }
                 println!("Traversed the following disk nodes: {:?}", values);
-                break Ok(DellTraversalResult {cur: (de_existing, offset_existing), prev });
+                break Ok(DellTraversalResult {
+                    cur: (de_existing, offset_existing),
+                    prev,
+                });
             }
 
             // update prev
@@ -242,7 +254,7 @@ impl DB {
 
     /// Retrieve a value from the index.
     /// &self needs to be mutable because the buffer associated with self is to be filled.
-    /// Returns 
+    /// Returns
     ///     1. the key's hash
     ///     2. the disk entry
     ///     3. whether or not the hash collided
