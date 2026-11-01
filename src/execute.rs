@@ -23,6 +23,7 @@ pub fn execute(buf: &str, db: &mut DB) -> Result<(), ExecuteError> {
         }
         ["info"] => print_info(),
         ["hash", key] => print_hash(key),
+        ["free"] => db.print_free_list(),
         ["de", de_id] => db.print_de(de_id),
         ["state"] => db.print_state(),
         ["exit"] => return Err(ExecuteError::ExitCmd),

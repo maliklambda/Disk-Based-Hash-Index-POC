@@ -282,12 +282,12 @@ impl DB {
 
     /// Deletes an entry by its key.
     /// The value of the deleted entry is not returned.
+    /// TODO: Handle deletion of content
     pub fn delete(&mut self, key: &str) -> Result<(), DeleteErr> {
         let (hash, _de_current, collision) = self.get_idx(key)?;
         if !collision {
             println!("No collision");
             let val = self.btree.remove(&hash).ok_or(GetErr::HashNotFound(hash))?;
-            // add de_current to free-list
             self.de_free_list.push(val);
             Ok(())
         } else {
@@ -319,6 +319,11 @@ impl DB {
     /// Util function to print DB's state
     pub fn print_state(&mut self) {
         println!("DB: {:?}", self);
+    }
+
+    /// Util function to print DB's de free list
+    pub fn print_free_list(&mut self) {
+        println!("DE-Freelist: {:?}", self.de_free_list);
     }
 }
 
