@@ -1,5 +1,6 @@
 use crate::{
-    db::{DB, error::ExecuteError}, utils::{print_hash, print_info, print_usage},
+    db::{DB, error::ExecuteError},
+    utils::{print_hash, print_info, print_usage},
 };
 
 const SEP: char = '\0';

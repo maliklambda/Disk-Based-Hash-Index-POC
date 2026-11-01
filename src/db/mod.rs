@@ -1,11 +1,16 @@
 use std::{
-    collections::BTreeMap, fs::{File, OpenOptions}, io::{self, Read, Seek, Write}, os::unix::fs::FileExt
+    collections::BTreeMap,
+    fs::{File, OpenOptions},
+    io::{self, Read, Seek, Write},
+    os::unix::fs::FileExt,
 };
 
 use log::{debug, info};
 
 use crate::db::{
-    disk_entry::DiskEntry, error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr}, hash::{IdxHash, hash},
+    disk_entry::DiskEntry,
+    error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr},
+    hash::{IdxHash, hash},
 };
 
 pub mod disk_entry;
@@ -106,11 +111,9 @@ impl DB {
                 de_existing
             );
             de_existing.next = pos;
-            println!(
-                "Updated next of {:?} (@{offset_existing})",
-                de_existing
-            );
-            self.entries.write_all_at(&de_existing.to_bytes(), offset_existing)?;
+            println!("Updated next of {:?} (@{offset_existing})", de_existing);
+            self.entries
+                .write_all_at(&de_existing.to_bytes(), offset_existing)?;
         } else {
             info!("Inserting new value to btree");
             let pos = self.append_de(key, val_offset, val_len);
@@ -176,7 +179,6 @@ impl DB {
         // allocate buffer for reading value.
         let mut buf = vec![0_u8; key.len()];
 
-
         // read existing
         let mut offset_existing = *self.btree.get(&start).unwrap();
         let mut values: Vec<DiskEntry> = vec![];
@@ -231,10 +233,11 @@ impl DB {
         let (hash, de) = self.get_idx(key)?;
         println!("DiskEntry for {hash}: {:?}", de);
         if key.len() != de.key_len as usize {
-            return Err(GetErr::InvalidLen)
+            return Err(GetErr::InvalidLen);
         }
         let mut buf = vec![0_u8; de.val_len as usize];
-        self.content.read_at(&mut buf, de.entry + key.len() as u64)?;
+        self.content
+            .read_at(&mut buf, de.entry + key.len() as u64)?;
         Ok(String::from_utf8(buf).unwrap())
     }
 
@@ -262,15 +265,11 @@ impl DB {
 
     pub fn print_de(&mut self, de_id: &str) {
         let de_id = de_id.parse::<u64>().unwrap();
-        self.entries
-            .read_at(&mut self.buffer, de_id)
-            .unwrap();
-        let de =
-            DiskEntry::from_bytes(&self.buffer).unwrap();
+        self.entries.read_at(&mut self.buffer, de_id).unwrap();
+        let de = DiskEntry::from_bytes(&self.buffer).unwrap();
         println!("DE: {:?}", de);
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -279,26 +278,29 @@ mod tests {
     #[allow(dead_code)]
     pub enum TestFileType {
         Content,
-        Entries
+        Entries,
     }
 
     #[allow(dead_code)]
     const TEST_FILE_PREFIX: &str = "test_";
-    const TEST_CONTENT_VALUES: [&str; 8] = ["This", "is", "indeed", "a", "lot", "of", "content", "!"];
+    const TEST_CONTENT_VALUES: [&str; 8] =
+        ["This", "is", "indeed", "a", "lot", "of", "content", "!"];
     const TEST_CONTENT_FNAME: &str = ".test.content.db";
     const TEST_ENTRIES_FNAME: &str = ".test.entries.db";
 
     fn generate_test_file_names(s: &str) -> (String, String) {
-        (test_file_name(s, TestFileType::Content), test_file_name(s, TestFileType::Entries))
+        (
+            test_file_name(s, TestFileType::Content),
+            test_file_name(s, TestFileType::Entries),
+        )
     }
 
     fn test_file_name(s: &str, file_type: TestFileType) -> String {
         match file_type {
             TestFileType::Content => format!("{TEST_FILE_PREFIX}{s}{TEST_CONTENT_FNAME}"),
-            TestFileType::Entries => format!("{TEST_FILE_PREFIX}{s}{TEST_ENTRIES_FNAME}")
+            TestFileType::Entries => format!("{TEST_FILE_PREFIX}{s}{TEST_ENTRIES_FNAME}"),
         }
     }
-
 
     #[test]
     fn index_non_collision() {
@@ -373,9 +375,7 @@ mod tests {
 
     #[test]
     fn index_full() {
-        use crate::db::hash::{
-            COLLISION_VALUES, NON_COLLISION_VALUES
-        };
+        use crate::db::hash::{COLLISION_VALUES, NON_COLLISION_VALUES};
 
         let (f_entries, f_content) = generate_test_file_names("index_full");
         let mut idx = DB::init(&f_entries, &f_content).unwrap();
