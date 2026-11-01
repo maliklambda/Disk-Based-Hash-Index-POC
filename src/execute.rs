@@ -21,6 +21,10 @@ pub fn execute(buf: &str, db: &mut DB) -> Result<(), ExecuteError> {
             println!("Deleting value '{key}'");
             db.delete(key)?;
         }
+        ["update", key, val] => {
+            println!("Updating value '{key}' to '{val}'");
+            db.update(key, val)?;
+        }
         ["info"] => print_info(),
         ["hash", key] => print_hash(key),
         ["free"] => db.print_free_list(),

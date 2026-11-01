@@ -8,10 +8,7 @@ use std::{
 use log::{debug, info};
 
 use crate::db::{
-    collision::DellTraversalResult,
-    disk_entry::DiskEntry,
-    error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr},
-    hash::{IdxHash, hash},
+    collision::DellTraversalResult, disk_entry::DiskEntry, error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr, UpdateErr}, hash::{IdxHash, hash},
 };
 
 pub mod collision;
@@ -306,6 +303,12 @@ impl DB {
             self.entries.write_all_at(&new_de.to_bytes(), prev_offset)?;
             Ok(())
         }
+    }
+
+    /// Updates an entry by its key.
+    /// The value of the deleted entry is not returned.
+    pub fn update(&mut self, key: &str, val: &str) -> Result<(), UpdateErr> {
+        todo!("Update an entry.")
     }
 
     /// Util function to print DEs

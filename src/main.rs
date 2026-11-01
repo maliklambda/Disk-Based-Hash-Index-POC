@@ -36,7 +36,6 @@ fn main() {
 
 /// Create this state upon startup.
 fn start_up_state(db: &mut DB) {
-    db.insert("why", "aa").unwrap();
-    db.insert("me", "bbbb").unwrap();
-    db.delete("me").unwrap();
+    db.insert("why", "old").unwrap();
+    db.update("why", "new").unwrap();
 }

@@ -8,6 +8,7 @@ pub enum ExecuteError {
     GetErr(GetErr),
     InsertErr(InsertErr),
     DeleteErr(DeleteErr),
+    UpdateErr(UpdateErr),
     AppendErr(AppendErr),
     InitErr(InitErr),
     ValueTooLong { max_len: usize, got: usize },
@@ -36,6 +37,12 @@ impl From<InsertErr> for ExecuteError {
 impl From<DeleteErr> for ExecuteError {
     fn from(value: DeleteErr) -> Self {
         Self::DeleteErr(value)
+    }
+}
+
+impl From<UpdateErr> for ExecuteError {
+    fn from(value: UpdateErr) -> Self {
+        Self::UpdateErr(value)
     }
 }
 
@@ -121,5 +128,23 @@ impl From<io::Error> for DeleteErr {
 impl From<GetErr> for DeleteErr {
     fn from(value: GetErr) -> Self {
         Self::GetErr(value)
+    }
+}
+
+#[derive(Debug)]
+pub enum UpdateErr {
+    IoErr(io::Error),
+    NonExistantValue(GetErr),
+}
+
+impl From<io::Error> for UpdateErr {
+    fn from(value: io::Error) -> Self {
+        Self::IoErr(value)
+    }
+}
+
+impl From<GetErr> for UpdateErr {
+    fn from(value: GetErr) -> Self {
+        Self::NonExistantValue(value)
     }
 }
