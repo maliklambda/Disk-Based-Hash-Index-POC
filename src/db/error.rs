@@ -109,10 +109,17 @@ impl From<io::Error> for GetErr {
 #[derive(Debug)]
 pub enum DeleteErr {
     IoErr(io::Error),
+    GetErr(GetErr),
 }
 
 impl From<io::Error> for DeleteErr {
     fn from(value: io::Error) -> Self {
         Self::IoErr(value)
+    }
+}
+
+impl From<GetErr> for DeleteErr {
+    fn from(value: GetErr) -> Self {
+        Self::GetErr(value)
     }
 }

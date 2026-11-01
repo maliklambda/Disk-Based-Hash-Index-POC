@@ -38,4 +38,5 @@ fn main() {
 fn start_up_state(db: &mut DB) {
     db.insert("why", "aa").unwrap();
     db.insert("me", "bbbb").unwrap();
+    db.delete("me").unwrap();
 }

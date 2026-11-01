@@ -1,21 +1,17 @@
 use std::{
-    collections::BTreeMap,
-    fs::{File, OpenOptions},
-    io::{self, Read, Seek, Write},
-    os::unix::fs::FileExt,
+    collections::BTreeMap, fs::{File, OpenOptions}, io::{self, Read, Seek, Write}, os::unix::fs::FileExt,
 };
 
 use log::{debug, info};
 
 use crate::db::{
-    disk_entry::DiskEntry,
-    error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr},
-    hash::{IdxHash, hash},
+    collision::DellTraversalResult, disk_entry::DiskEntry, error::{AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr}, hash::{IdxHash, hash},
 };
 
 pub mod disk_entry;
 pub mod error;
 pub mod hash;
+pub mod collision;
 
 /// Page size in bytes
 pub const PAGE_SIZE: usize = 256;
@@ -169,17 +165,19 @@ impl DB {
 
     /// walk collision chain and return entry with specified length
     /// Does not update any value.
+    /// Returns DellTraversalResult which captures current and previous DELL entry
     fn collision_find(
         &mut self,
         start: IdxHash,
         key: &str,
-    ) -> Result<(DiskEntry, u64), CollisionWalkErr> {
+    ) -> Result<DellTraversalResult, CollisionWalkErr> {
         // allocate buffer for reading value.
         let mut buf = vec![0_u8; key.len()];
 
         // read existing
         let mut offset_existing = *self.btree.get(&start).unwrap();
         let mut values: Vec<DiskEntry> = vec![];
+        let mut prev: Option<(DiskEntry, u64)> = None;
         loop {
             self.entries
                 .read_at(&mut self.buffer, offset_existing)
@@ -195,14 +193,13 @@ impl DB {
                 println!("Comparing: buf({:?}) to key({:?})", buf, key.as_bytes());
                 if buf == key.as_bytes() {
                     println!("Traversed the following disk nodes: {:?}", values);
-                    break Ok((de_existing, offset_existing));
+                    break Ok(DellTraversalResult {cur: (de_existing, offset_existing), prev });
                 }
             }
 
-            offset_existing = de_existing.next;
-
             if de_existing.next == 0 {
                 println!("All values = {:?}", values);
+                offset_existing = de_existing.next;
                 if de_existing.key_len != key.len() as u32 {
                     return Err(CollisionWalkErr::HashNotFound {
                         hash: start,
@@ -210,8 +207,12 @@ impl DB {
                     });
                 }
                 println!("Traversed the following disk nodes: {:?}", values);
-                break Ok((de_existing, offset_existing));
+                break Ok(DellTraversalResult {cur: (de_existing, offset_existing), prev });
             }
+
+            // update prev
+            prev = Some((de_existing.clone(), offset_existing));
+            offset_existing = de_existing.next;
         }
     }
 
@@ -228,10 +229,10 @@ impl DB {
     }
 
     pub fn get(&mut self, key: &str) -> Result<String, GetErr> {
-        let (hash, de) = self.get_idx(key)?;
+        let (hash, de, _collision) = self.get_idx(key)?;
         println!("DiskEntry for {hash}: {:?}", de);
         if key.len() != de.key_len as usize {
-            return Err(GetErr::InvalidLen);
+            return Err(GetErr::HashNotFound(hash));
         }
         let mut buf = vec![0_u8; de.val_len as usize];
         self.content
@@ -241,7 +242,11 @@ impl DB {
 
     /// Retrieve a value from the index.
     /// &self needs to be mutable because the buffer associated with self is to be filled.
-    fn get_idx(&mut self, key: &str) -> Result<(IdxHash, DiskEntry), GetErr> {
+    /// Returns 
+    ///     1. the key's hash
+    ///     2. the disk entry
+    ///     3. whether or not the hash collided
+    fn get_idx(&mut self, key: &str) -> Result<(IdxHash, DiskEntry, bool /*collision?*/), GetErr> {
         let h = hash(key);
         println!("Btree: {:?} ({h})", self.btree);
         let val = self.btree.get(&h).ok_or(GetErr::HashNotFound(h))?;
@@ -249,16 +254,34 @@ impl DB {
         assert!(bytes <= PAGE_SIZE);
         // TODO: Refactor to remove redundant read of head (in self.collision_find).
         let mut de = DiskEntry::from_bytes(&self.buffer).ok_or(GetErr::ByteConvertErr)?;
+        let mut collision = false;
         if de.next != 0 {
-            (de, _) = self.collision_find(h, key).unwrap();
+            let dellt_res = self.collision_find(h, key).unwrap();
+            de = dellt_res.cur.0;
+            collision = true;
         }
-        Ok((h, de))
+        Ok((h, de, collision))
     }
 
     /// Deletes an entry by its key.
-    /// The value of the deleted entry is returned.
-    pub fn delete(&mut self, key: &str) -> Result<&str, DeleteErr> {
-        todo!("Implement delete")
+    /// The value of the deleted entry is not returned.
+    pub fn delete(&mut self, key: &str) -> Result<(), DeleteErr> {
+        let (hash, _de_current, collision) = self.get_idx(key)?;
+        if !collision {
+            let _val = self.btree.get(&hash).ok_or(GetErr::HashNotFound(hash))?;
+            // add de_current to free-list
+            Ok(())
+        } else {
+            let dellt_res = self.collision_find(hash, key).unwrap();
+            println!("DellTraversalResult: {:?}", dellt_res);
+            // add de_current to free-list
+
+            // dellt_res.prev.unwrap().1
+            let (mut new_de, prev_offset) = dellt_res.prev.unwrap();
+            new_de.next = dellt_res.cur.0.next;
+            self.entries.write_all_at(&new_de.to_bytes(), prev_offset)?;
+            Ok(())
+        }
     }
 
     /// Util function to print DEs
