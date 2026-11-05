@@ -4,11 +4,11 @@ use crate::db::hash::IdxHash;
 
 /// Error returned during execution of commands on the index.
 #[derive(Debug)]
-pub enum ExecuteError {
+pub enum ExecuteError<'a> {
     GetErr(GetErr),
     InsertErr(InsertErr),
     DeleteErr(DeleteErr),
-    UpdateErr(UpdateErr),
+    UpdateErr(UpdateErr<'a>),
     AppendErr(AppendErr),
     InitErr(InitErr),
     ValueTooLong { max_len: usize, got: usize },
@@ -16,37 +16,37 @@ pub enum ExecuteError {
     ExitCmd,
 }
 
-impl From<GetErr> for ExecuteError {
+impl<'a> From<GetErr> for ExecuteError<'a> {
     fn from(value: GetErr) -> Self {
         Self::GetErr(value)
     }
 }
 
-impl From<AppendErr> for ExecuteError {
+impl<'a> From<AppendErr> for ExecuteError<'a> {
     fn from(value: AppendErr) -> Self {
         Self::AppendErr(value)
     }
 }
 
-impl From<InsertErr> for ExecuteError {
+impl<'a> From<InsertErr> for ExecuteError<'a> {
     fn from(value: InsertErr) -> Self {
         Self::InsertErr(value)
     }
 }
 
-impl From<DeleteErr> for ExecuteError {
+impl<'a> From<DeleteErr> for ExecuteError<'a> {
     fn from(value: DeleteErr) -> Self {
         Self::DeleteErr(value)
     }
 }
 
-impl From<UpdateErr> for ExecuteError {
-    fn from(value: UpdateErr) -> Self {
+impl<'a> From<UpdateErr<'a>> for ExecuteError<'a> {
+    fn from(value: UpdateErr<'a>) -> Self {
         Self::UpdateErr(value)
     }
 }
 
-impl From<InitErr> for ExecuteError {
+impl<'a> From<InitErr> for ExecuteError<'a> {
     fn from(value: InitErr) -> Self {
         Self::InitErr(value)
     }
@@ -132,19 +132,13 @@ impl From<GetErr> for DeleteErr {
 }
 
 #[derive(Debug)]
-pub enum UpdateErr {
+pub enum UpdateErr<'a> {
     IoErr(io::Error),
-    NonExistantValue(GetErr),
+    NonExistantValue(&'a str),
 }
 
-impl From<io::Error> for UpdateErr {
+impl<'a> From<io::Error> for UpdateErr<'a> {
     fn from(value: io::Error) -> Self {
         Self::IoErr(value)
-    }
-}
-
-impl From<GetErr> for UpdateErr {
-    fn from(value: GetErr) -> Self {
-        Self::NonExistantValue(value)
     }
 }
