@@ -1,11 +1,11 @@
 use crate::{
     db::{DB, error::ExecuteError},
-    utils::{print_hash, print_info, print_usage},
+    utils::{print_info, print_usage},
 };
 
 const SEP: char = '\0';
 
-pub fn execute(buf: &str, db: &mut DB) -> Result<(), ExecuteError> {
+pub fn execute<'a>(buf: &'a str, db: &'a mut DB) -> Result<(), ExecuteError<'a>> {
     // TODO: preprocess buf to enable multiline strings
     match pre_process(buf).split(SEP).collect::<Vec<_>>().as_slice() {
         [""] => (),
@@ -26,7 +26,7 @@ pub fn execute(buf: &str, db: &mut DB) -> Result<(), ExecuteError> {
             db.update(key, val)?;
         }
         ["info"] => print_info(),
-        ["hash", key] => print_hash(key),
+        ["hash", key] => db.print_hash(key),
         ["free"] => db.print_free_list(),
         ["de", de_id] => db.print_de(de_id),
         ["state"] => db.print_state(),

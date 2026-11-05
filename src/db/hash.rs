@@ -1,6 +1,26 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
+use xxhash_rust::xxh3::xxh3_64;
 
 pub type IdxHash = u64;
+
+pub type HashFn = fn(s: &str) -> IdxHash;
+
+/// Supported hash algorithms
+#[derive(Debug)]
+pub enum HashAlgorithm {
+    /// Uses the default hasher
+    Default,
+    XXHash64,
+}
+
+impl HashAlgorithm {
+    pub fn to_fn(&self) -> HashFn {
+        match self {
+            Self::Default => default_hash,
+            Self::XXHash64 => xx_hash_64,
+        }
+    }
+}
 
 /// Two values may not have the same length
 pub const COLLISION_VALUES: [&str; 6] = ["hello", "food", "meal", "why", "me", "i"];
@@ -12,16 +32,18 @@ pub const NON_COLLISION_VALUES: [(&str, &str); 4] = [
     ("Pizza", "is italian"),
 ];
 
-pub fn hash(s: &str) -> IdxHash {
-    // include default values for easier collision testing
-    match s {
-        _ if COLLISION_VALUES.contains(&s) => 1,
-        _ => calculate_hash(s),
+fn default_hash(s: &str) -> IdxHash {
+    if COLLISION_VALUES.contains(&s) {
+        return 1;
     }
-}
-
-fn calculate_hash(s: &str) -> IdxHash {
     let mut h = DefaultHasher::new();
     s.hash(&mut h);
     h.finish()
+}
+
+fn xx_hash_64(s: &str) -> IdxHash {
+    if COLLISION_VALUES.contains(&s) {
+        return 1;
+    }
+    xxh3_64(s.as_bytes())
 }

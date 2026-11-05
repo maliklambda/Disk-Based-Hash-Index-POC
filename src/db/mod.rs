@@ -7,13 +7,17 @@ use std::{
 
 use log::{debug, info};
 
-use crate::db::{
-    collision::DellTraversalResult,
-    disk_entry::DiskEntry,
-    error::{
-        AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr, UpdateErr,
+use crate::{
+    config::Config,
+    db::{
+        collision::DellTraversalResult,
+        disk_entry::DiskEntry,
+        error::{
+            AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr,
+            UpdateErr,
+        },
+        hash::{HashAlgorithm, HashFn, IdxHash},
     },
-    hash::{IdxHash, hash},
 };
 
 pub mod collision;
@@ -56,20 +60,28 @@ pub struct DB {
     // /// File descriptor
     // /// Btree is dumped here and read during startup
     // f_idx: File,
+    /// Function to calculate the hash.
+    /// This field enables trees that use different hashes.
+    pub hash_fn: HashFn,
 }
 
-impl DB {
+impl<'s> DB {
     /// Filename of the index-content file.
-    const F_CONTENT: &str = "content.db";
+    const F_CONTENT: &'static str = "content.db";
     /// Filename of the entries file.
-    const F_ENTRIES: &str = "entries.db";
+    const F_ENTRIES: &'static str = "entries.db";
 
     /// Init with default file name
     pub fn new() -> Result<Self, InitErr> {
-        Self::init(Self::F_CONTENT, Self::F_ENTRIES)
+        let c = Config {
+            hash_algorithm: HashAlgorithm::Default,
+            entries_fname: Self::F_ENTRIES.to_string(),
+            content_fname: Self::F_CONTENT.to_string(),
+        };
+        Self::init(c)
     }
 
-    pub fn init(entries_fname: &str, content_fname: &str) -> Result<Self, InitErr> {
+    pub fn init(config: Config) -> Result<Self, InitErr> {
         let content = OpenOptions::new()
             .read(true)
             .write(true)
@@ -77,25 +89,26 @@ impl DB {
             // because of the updates made during chaining
             .create(true)
             .truncate(true)
-            .open(content_fname)?;
+            .open(config.content_fname)?;
 
         let entries = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(true)
-            .open(entries_fname)?;
+            .open(config.entries_fname)?;
         Ok(Self {
             btree: BTreeMap::new(),
             entries,
             de_free_list: vec![],
             content,
             buffer: [0_u8; PAGE_SIZE],
+            hash_fn: config.hash_algorithm.to_fn(),
         })
     }
 
     /// Insert both a key and value
-    pub fn insert(&mut self, key: &str, val: &str) -> Result<(), ExecuteError> {
+    pub fn insert(&mut self, key: &str, val: &str) -> Result<(), ExecuteError<'s>> {
         println!("Inserting value '{key}', '{val}' to entry-file");
         let (val_offset, val_len) = self.append_content(key, val)?;
         self.insert_idx(key, val_offset, val_len)?;
@@ -109,7 +122,7 @@ impl DB {
         val_offset: u64, /* simulated offset to entry on disk */
         val_len: usize,  /* length of the value in the entries file */
     ) -> Result<(), InsertErr> {
-        let h = hash(key);
+        let h = (self.hash_fn)(key);
         if self.btree.contains_key(&h) {
             // In case of collision: update next-pointer of last value with the same hash.
             // Do not insert to btree in that case (Head of ll is already inserted).
@@ -266,7 +279,7 @@ impl DB {
     ///     2. the disk entry
     ///     3. whether or not the hash collided
     fn get_idx(&mut self, key: &str) -> Result<(IdxHash, DiskEntry, bool /*collision?*/), GetErr> {
-        let h = hash(key);
+        let h = (self.hash_fn)(key);
         println!("Btree: {:?} ({h})", self.btree);
         let val = self.btree.get(&h).ok_or(GetErr::HashNotFound(h))?;
         let bytes = self.entries.read_at(&mut self.buffer, *val)?;
@@ -311,7 +324,7 @@ impl DB {
     }
 
     /// Updates an entry by its key.
-    pub fn update(&mut self, key: &str, val: &str) -> Result<(), UpdateErr> {
+    pub fn update(&mut self, _key: &str, _val: &str) -> Result<(), UpdateErr<'s>> {
         todo!("Update an entry.")
     }
 
@@ -321,6 +334,12 @@ impl DB {
         self.entries.read_at(&mut self.buffer, de_id).unwrap();
         let de = DiskEntry::from_bytes(&self.buffer).unwrap();
         println!("DE: {:?}", de);
+    }
+
+    /// Util function to print a hash
+    pub fn print_hash(&self, key: &str) {
+        let h = (self.hash_fn)(key);
+        println!("h('{key}') = {h}")
     }
 
     /// Util function to print DB's state
@@ -370,7 +389,12 @@ mod tests {
         use crate::db::hash::NON_COLLISION_VALUES;
 
         let (f_entries, f_content) = generate_test_file_names("index_non_collision");
-        let mut db = DB::init(&f_entries, &f_content).unwrap();
+        let c = Config {
+            content_fname: f_content,
+            entries_fname: f_entries,
+            hash_algorithm: HashAlgorithm::Default,
+        };
+        let mut db = DB::init(c).unwrap();
         let values = NON_COLLISION_VALUES;
 
         for (key, val) in values {
@@ -383,7 +407,7 @@ mod tests {
                 v,
                 val,
                 "For {key} - {:?}; Values: {:?}; Btree: {:?}",
-                hash(key),
+                (db.hash_fn)(key),
                 values,
                 db.btree
             );
@@ -395,7 +419,12 @@ mod tests {
         use crate::db::hash::COLLISION_VALUES;
 
         let (f_entries, f_content) = generate_test_file_names("index_collision");
-        let mut db = DB::init(&f_entries, &f_content).unwrap();
+        let c = Config {
+            content_fname: f_content,
+            entries_fname: f_entries,
+            hash_algorithm: HashAlgorithm::Default,
+        };
+        let mut db = DB::init(c).unwrap();
 
         let values: Vec<(&str, &str)> = COLLISION_VALUES
             .iter()
@@ -419,7 +448,12 @@ mod tests {
         use crate::db::hash::COLLISION_VALUES_SAME_LENGTH;
 
         let (f_entries, f_content) = generate_test_file_names("index_collision_same_length");
-        let mut db = DB::init(&f_entries, &f_content).unwrap();
+        let c = Config {
+            content_fname: f_content,
+            entries_fname: f_entries,
+            hash_algorithm: HashAlgorithm::Default,
+        };
+        let mut db = DB::init(c).unwrap();
 
         let values: Vec<(&str, &str)> = COLLISION_VALUES_SAME_LENGTH
             .iter()
@@ -441,7 +475,12 @@ mod tests {
         use crate::db::hash::{COLLISION_VALUES, NON_COLLISION_VALUES};
 
         let (f_entries, f_content) = generate_test_file_names("index_full");
-        let mut db = DB::init(&f_entries, &f_content).unwrap();
+        let c = Config {
+            content_fname: f_content,
+            entries_fname: f_entries,
+            hash_algorithm: HashAlgorithm::Default,
+        };
+        let mut db = DB::init(c).unwrap();
 
         let mut values: Vec<(&str, &str)> = COLLISION_VALUES
             .iter()
@@ -460,7 +499,7 @@ mod tests {
                 v,
                 *val,
                 "For {key} - {:?}; Values: {:?}; Btree: {:?}",
-                hash(key),
+                (db.hash_fn)(key),
                 values,
                 db.btree
             );
@@ -472,7 +511,12 @@ mod tests {
         use crate::db::hash::{COLLISION_VALUES, NON_COLLISION_VALUES};
 
         let (f_entries, f_content) = generate_test_file_names("index_full");
-        let mut db = DB::init(&f_entries, &f_content).unwrap();
+        let c = Config {
+            content_fname: f_content,
+            entries_fname: f_entries,
+            hash_algorithm: HashAlgorithm::Default,
+        };
+        let mut db = DB::init(c).unwrap();
 
         let mut values: Vec<(&str, &str)> = COLLISION_VALUES
             .iter()

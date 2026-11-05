@@ -1,6 +1,7 @@
 use std::io::{self, Write};
 
 use crate::{
+    config::{parse_cli_args, CLI_ARGS_INFO_STR},
     db::{
         DB,
         error::{ExecuteError, GetErr},
@@ -8,13 +9,16 @@ use crate::{
     execute::execute,
 };
 
-pub mod db;
-pub mod execute;
-pub mod utils;
+mod config;
+mod db;
+mod execute;
+mod utils;
 
 fn main() {
     simple_logger::init_with_level(log::Level::Warn).unwrap();
-    let mut db = DB::init("entries.db", "content.db").unwrap();
+    let config = parse_cli_args().unwrap_or_else(|_| panic!("{CLI_ARGS_INFO_STR}"));
+    let mut db = DB::init(config).unwrap();
+    println!("DB: {:?}", db);
     let mut buf = String::new();
     start_up_state(&mut db);
     loop {
