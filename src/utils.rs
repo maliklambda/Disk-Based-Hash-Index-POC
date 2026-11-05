@@ -27,4 +27,3 @@ const INFO_STR: &str = "Info:
 pub fn print_info() {
     println!("{INFO_STR}")
 }
-

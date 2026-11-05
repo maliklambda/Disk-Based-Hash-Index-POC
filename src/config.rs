@@ -46,10 +46,7 @@ pub fn parse_cli_args() -> Result<Config, String> {
                     "xxh64" => HashAlgorithm::XXHash64,
                     "default" => HashAlgorithm::Default,
                     _ => {
-                        return Err(format!(
-                            "Unsupported hash algorithm: {}.",
-                            args[idx]
-                        ));
+                        return Err(format!("Unsupported hash algorithm: {}.", args[idx]));
                     }
                 });
                 // hash_algorithm = Some(args[idx]);

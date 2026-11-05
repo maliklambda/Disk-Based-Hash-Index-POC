@@ -16,15 +16,23 @@ pub enum HashAlgorithm {
 impl HashAlgorithm {
     pub fn to_fn(&self) -> HashFn {
         match self {
-            Self::Default => default_hash,
-            Self::XXHash64 => xx_hash_64,
+            Self::Default => {
+                println!("Initializing with Default hash algorithm.");
+                default_hash
+            }
+            Self::XXHash64 => {
+                println!("Initializing with XXHash64 hash algorithm.");
+                xx_hash_64
+            }
         }
     }
 }
 
 /// Two values may not have the same length
 pub const COLLISION_VALUES: [&str; 6] = ["hello", "food", "meal", "why", "me", "i"];
+#[allow(dead_code)]
 pub const COLLISION_VALUES_SAME_LENGTH: [&str; 3] = ["name", "pass", "boat"];
+#[allow(dead_code)]
 pub const NON_COLLISION_VALUES: [(&str, &str); 4] = [
     ("I", "am your father, Luke"),
     ("like", "you do."),

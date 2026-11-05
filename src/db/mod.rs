@@ -16,7 +16,7 @@ use crate::{
             AppendErr, CollisionWalkErr, DeleteErr, ExecuteError, GetErr, InitErr, InsertErr,
             UpdateErr,
         },
-        hash::{HashAlgorithm, HashFn, IdxHash},
+        hash::{HashFn, IdxHash},
     },
 };
 
@@ -36,6 +36,10 @@ pub struct DB {
     /// At o1, there is a DiskEntry (see struct DiskEntry),
     /// which in turn points to the offset of the actual data.
     pub btree: BTreeMap<IdxHash, u64>,
+
+    /// Function to calculate the hash.
+    /// This field enables trees that use different hashes.
+    pub hash_fn: HashFn,
 
     /// Buffer for page content
     pub buffer: [u8; PAGE_SIZE],
@@ -60,27 +64,9 @@ pub struct DB {
     // /// File descriptor
     // /// Btree is dumped here and read during startup
     // f_idx: File,
-    /// Function to calculate the hash.
-    /// This field enables trees that use different hashes.
-    pub hash_fn: HashFn,
 }
 
 impl<'s> DB {
-    /// Filename of the index-content file.
-    const F_CONTENT: &'static str = "content.db";
-    /// Filename of the entries file.
-    const F_ENTRIES: &'static str = "entries.db";
-
-    /// Init with default file name
-    pub fn new() -> Result<Self, InitErr> {
-        let c = Config {
-            hash_algorithm: HashAlgorithm::Default,
-            entries_fname: Self::F_ENTRIES.to_string(),
-            content_fname: Self::F_CONTENT.to_string(),
-        };
-        Self::init(c)
-    }
-
     pub fn init(config: Config) -> Result<Self, InitErr> {
         let content = OpenOptions::new()
             .read(true)
@@ -356,6 +342,7 @@ impl<'s> DB {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::hash::HashAlgorithm;
 
     #[allow(dead_code)]
     pub enum TestFileType {

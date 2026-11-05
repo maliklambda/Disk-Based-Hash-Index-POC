@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 
 use crate::{
-    config::{parse_cli_args, CLI_ARGS_INFO_STR},
+    config::{CLI_ARGS_INFO_STR, parse_cli_args},
     db::{
         DB,
         error::{ExecuteError, GetErr},
@@ -41,5 +41,5 @@ fn main() {
 /// Create this state upon startup.
 fn start_up_state(db: &mut DB) {
     db.insert("why", "old").unwrap();
-    db.update("why", "new").unwrap();
+    // db.update("why", "new").unwrap();
 }
