@@ -1,4 +1,4 @@
-# Disk Based Hash Index
+# BH+ Tree
 
 A proof of concept for a new approach to database indexing for variable length data.
 
@@ -12,14 +12,15 @@ However, most hash-indices require to the entire hash-array to be in memory.
 So hash indices are not perfect either.
 
 While I don't claim that this approach is perfect whatsoever, 
-it does solve some of the complexities introduced by traditional Btree-indexing
-by using techniques from Hash-indexing.
+it does solve some of the complexities introduced by traditional Btree-indexing by using techniques from Hash-indexing.
 It is basically a middle-ground between a traditional Btree- and a Hash-index.
-Use cases for such a Disk-Based-Hash-Index (DBHI) would be situations, in which a Hash-index would have been chosen, 
-but memory constraints do not allow the entire index to be read into RAM at once.
+Use cases for such a BH+ Tree would be situations, in which a Hash-index would have been chosen, 
+but memory constraints do not allow the entire index to be read into RAM at once (which is where Hash-indices shine the most).
+<br>
+There are also thoughs on [possible optimizations](./docs/optimizations.md) and [possible extensions](./docs/extension.md) included in this repo.
 
 ## How it works
-The base of a DBHI is a regular Btree.
+The base of BH+ is a regular Btree.
 That Btree is ideally written to disk and its nodes are read incrementally as the traversal goes down from the root onwards, resulting in log(n) many reads.
 The Btree's nodes store the fixed-length hashes of keys inserted 
 (with the keys being variable-length data).
@@ -27,12 +28,12 @@ The keys themselves are never stored explicitely,
 they are expected to be stored already in the entry, which the key is associated with.
 
 ### Components
-- Btree: Holds fixed-size-nodes of a hash-value and an offset to a DiskEntry in the content-files.
-- Content-file: Append-only file of DiskEntries (fixed-sized).
-- DiskEntries: Datastructure that holds the offset to the actual entry*.
+The architecture can be split into three levels.
+- Level1 - Btree: Holds fixed-size-nodes of a hash-value and an offset to a DiskEntry in the content-files.
+- Level2 - Entries (Leaf Nodes; that's where the '+' part of 'BH+' comes from): Append-only file of (fixed-sized) DiskEntries.
+- Level3 - Data Heap for variable length data: Datastructure that holds the offset to the actual entry*.
 
-
-![DBHI Architecture diagram](./static/disk_based_hash_index_poc.png "DBHI Architecture")
+![BH+ Architecture diagram](./docs/static/architecture.png "BH+ Architecture")
 
 ### Collisions are expected
 Using a hash function will inevitably lead to collisions. 
@@ -42,6 +43,7 @@ the number of collisions will be small enough to be negligable for performance m
 For this POC, a u64 is chosen as the type of the hash-value. 
 Smaller values are possible, but it should be ensured that enough bits are provided.
 (For example, with 10⁶ entries, choosing an 8-bit hash-type will yield terrible performance.)
+Larger hash-values are planned (e.g. via XXHash3_128) but not supported yet.
 
 
 ### Handling collisions
@@ -65,8 +67,8 @@ The only modifications made are to the content-file (the last DiskEntry must poi
 However, since strings are just an array of bytes, this would work well for any BLOB.
 
 ## Trade-offs and ciriticism
-A DBHI comes with several trade-offs when compared to established index methodology.
-Most comparisons in the following are made to on-disk-Btrees, since they are most similar to DBHIs.
+A BH+ comes with several trade-offs when compared to established index methodology.
+Most comparisons in the following are made to on-disk-Btrees, since they are most similar to BH+.
 ### Positives
 - Reduced disk space: 
 Values are not stored redundantly, as they are in regular Btrees. 
